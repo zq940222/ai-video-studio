@@ -6,6 +6,64 @@ import { eq, and, desc } from 'drizzle-orm';
 import { getAvailableLLMProvider } from '@/lib/providers/llm';
 import { SCRIPT_SYSTEM_PROMPT, SCRIPT_USER_PROMPT } from '@/lib/prompts/script';
 
+/**
+ * Attempt to repair truncated JSON by closing unclosed brackets and braces
+ */
+function repairTruncatedJson(jsonStr: string): string {
+  let repaired = jsonStr.trim();
+
+  // Remove trailing comma if present
+  repaired = repaired.replace(/,\s*$/, '');
+
+  // Remove incomplete key-value pair at the end (e.g., "key": or "key": ")
+  repaired = repaired.replace(/,?\s*"[^"]*":\s*"?[^"]*$/, '');
+  repaired = repaired.replace(/,?\s*"[^"]*":\s*$/, '');
+
+  // Count unclosed brackets and braces
+  let braceCount = 0;
+  let bracketCount = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (const char of repaired) {
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') braceCount++;
+      else if (char === '}') braceCount--;
+      else if (char === '[') bracketCount++;
+      else if (char === ']') bracketCount--;
+    }
+  }
+
+  // If we're still in a string, close it
+  if (inString) {
+    repaired += '"';
+  }
+
+  // Close unclosed brackets and braces
+  while (bracketCount > 0) {
+    repaired += ']';
+    bracketCount--;
+  }
+  while (braceCount > 0) {
+    repaired += '}';
+    braceCount--;
+  }
+
+  return repaired;
+}
+
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -55,7 +113,7 @@ export async function POST(request: Request) {
         { role: 'user', content: SCRIPT_USER_PROMPT(content) },
       ],
       temperature: 0.7,
-      maxTokens: 8192,
+      maxTokens: 16384,
     });
 
     // Parse the generated script
@@ -63,13 +121,43 @@ export async function POST(request: Request) {
     try {
       // Extract JSON from the response (handle markdown code blocks)
       let jsonStr = result.content;
-      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (jsonMatch) {
-        jsonStr = jsonMatch[1];
+
+      // Try multiple patterns to extract JSON
+      // Pattern 1: ```json ... ``` or ``` ... ```
+      const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (codeBlockMatch) {
+        jsonStr = codeBlockMatch[1];
+      } else {
+        // Pattern 2: Find JSON object directly { ... }
+        const jsonObjectMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (jsonObjectMatch) {
+          jsonStr = jsonObjectMatch[0];
+        }
       }
-      scriptData = JSON.parse(jsonStr.trim());
+
+      // Try to parse JSON, with fallback for truncated responses
+      try {
+        scriptData = JSON.parse(jsonStr.trim());
+      } catch (initialParseError) {
+        console.warn('Initial JSON parse failed, attempting repair...');
+        // Try to repair truncated JSON
+        const repairedJson = repairTruncatedJson(jsonStr.trim());
+        scriptData = JSON.parse(repairedJson);
+        console.log('JSON repair successful');
+      }
+
+      // Validate the parsed data has expected structure
+      if (!scriptData || typeof scriptData !== 'object') {
+        throw new Error('Invalid script data structure');
+      }
+
+      // Ensure required fields exist
+      if (!scriptData.scenes && !scriptData.characters && !scriptData.title) {
+        console.warn('Script data missing expected fields:', Object.keys(scriptData));
+      }
     } catch (parseError) {
       console.error('Failed to parse script JSON:', parseError);
+      console.error('Raw content:', result.content.substring(0, 500));
       // If parsing fails, store the raw content
       scriptData = { raw: result.content };
     }

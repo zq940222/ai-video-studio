@@ -21,13 +21,43 @@ export async function GET() {
 
     // Return masked keys with provider info
     const maskedKeys = keys.map((key) => {
-      const decryptedKey = decrypt(key.encryptedKey);
-      return {
-        id: key.id,
-        provider: key.provider,
-        maskedKey: maskApiKey(decryptedKey),
-        updatedAt: key.updatedAt,
-      };
+      const authType = key.authType || 'api_key';
+      const config = key.config as Record<string, unknown> | null;
+
+      if (authType === 'oauth') {
+        return {
+          id: key.id,
+          provider: key.provider,
+          authType: 'oauth' as const,
+          oauthConnected: !!key.encryptedAccessToken,
+          tokenExpiresAt: key.tokenExpiresAt?.toISOString(),
+          config,
+          updatedAt: key.updatedAt,
+        };
+      } else {
+        let decryptedKey = '';
+        if (key.encryptedKey) {
+          // Check if it's a plain URL (local provider)
+          if (key.encryptedKey.startsWith('url:')) {
+            decryptedKey = key.encryptedKey.slice(4); // Remove 'url:' prefix
+          } else {
+            // Decrypt API key
+            try {
+              decryptedKey = decrypt(key.encryptedKey);
+            } catch {
+              decryptedKey = '[解密失败]';
+            }
+          }
+        }
+        return {
+          id: key.id,
+          provider: key.provider,
+          authType: 'api_key' as const,
+          maskedKey: maskApiKey(decryptedKey),
+          config,
+          updatedAt: key.updatedAt,
+        };
+      }
     });
 
     return NextResponse.json(maskedKeys);
@@ -46,18 +76,51 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
-    const { provider, apiKey } = await request.json();
+    const body = await request.json();
+    const { provider, apiKey, authType = 'api_key', config } = body;
+
+    console.log('[API Keys] POST request:', {
+      provider,
+      hasApiKey: !!apiKey,
+      apiKeyLength: apiKey?.length,
+      authType,
+      config,
+      userId: session.user.id,
+    });
 
     // Validate provider
     if (!provider || !(provider in AI_PROVIDERS)) {
       return NextResponse.json({ error: '无效的服务提供商' }, { status: 400 });
     }
 
-    if (!apiKey?.trim()) {
+    if (authType === 'api_key' && !apiKey?.trim()) {
       return NextResponse.json({ error: 'API Key 不能为空' }, { status: 400 });
     }
 
-    const encryptedKey = encrypt(apiKey.trim());
+    // Check if this is a local provider (no encryption needed for URLs)
+    const isLocalProvider = AI_PROVIDERS[provider as ProviderId]?.isLocal;
+    let encryptedKey: string | null = null;
+
+    if (apiKey) {
+      if (isLocalProvider) {
+        // For local providers, store URL directly (no encryption needed)
+        // Use a prefix to indicate it's a plain URL
+        encryptedKey = `url:${apiKey.trim()}`;
+        console.log('[API Keys] Storing local service URL (no encryption)');
+      } else {
+        // For cloud providers, encrypt the API key
+        try {
+          encryptedKey = encrypt(apiKey.trim());
+          console.log('[API Keys] Encryption successful');
+        } catch (encryptError) {
+          console.error('[API Keys] Encryption failed:', encryptError);
+          return NextResponse.json(
+            { error: '加密失败，请检查服务器 ENCRYPTION_KEY 配置' },
+            { status: 500 }
+          );
+        }
+      }
+    }
 
     // Check if key already exists for this provider
     const existingKey = await db.query.userApiKeys.findFirst({
@@ -69,23 +132,35 @@ export async function POST(request: Request) {
 
     if (existingKey) {
       // Update existing key
+      console.log('[API Keys] Updating existing key for provider:', provider);
       await db
         .update(userApiKeys)
         .set({
+          authType: 'api_key',
           encryptedKey,
+          encryptedAccessToken: null,
+          encryptedRefreshToken: null,
+          tokenExpiresAt: null,
+          oauthMetadata: null,
+          config: config || existingKey.config,
           updatedAt: new Date(),
         })
         .where(eq(userApiKeys.id, existingKey.id));
 
+      console.log('[API Keys] Update successful');
       return NextResponse.json({ message: 'API Key 已更新' });
     } else {
       // Insert new key
+      console.log('[API Keys] Inserting new key for provider:', provider);
       await db.insert(userApiKeys).values({
         userId: session.user.id,
         provider,
+        config,
+        authType: 'api_key',
         encryptedKey,
       });
 
+      console.log('[API Keys] Insert successful');
       return NextResponse.json({ message: 'API Key 已保存' }, { status: 201 });
     }
   } catch (error) {

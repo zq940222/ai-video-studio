@@ -29,13 +29,35 @@ interface HistoryResponse {
   };
 }
 
+// Default model configurations
+export interface ComfyUIImageConfig {
+  checkpointName?: string; // e.g., 'sd_xl_base_1.0.safetensors'
+  samplerName?: string;    // e.g., 'euler', 'dpmpp_2m'
+  scheduler?: string;      // e.g., 'normal', 'karras'
+  steps?: number;
+  cfg?: number;
+}
+
+// Get default config with environment variables (evaluated at runtime)
+function getDefaultConfig(): ComfyUIImageConfig {
+  return {
+    checkpointName: process.env.COMFYUI_CHECKPOINT || 'AnythingXL_xl.safetensors',
+    samplerName: 'euler',
+    scheduler: 'normal',
+    steps: 20,
+    cfg: 7,
+  };
+}
+
 export class ComfyUIProvider implements AIProvider<'image'> {
   name = 'ComfyUI';
   type = 'image' as const;
   private baseUrl: string;
+  private config: ComfyUIImageConfig;
 
-  constructor(baseUrl: string = 'http://localhost:8188') {
+  constructor(baseUrl: string = 'http://localhost:8188', config?: ComfyUIImageConfig) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.config = { ...getDefaultConfig(), ...config };
   }
 
   async isAvailable(): Promise<boolean> {
@@ -54,6 +76,8 @@ export class ComfyUIProvider implements AIProvider<'image'> {
     // Build workflow for text-to-image
     const workflow = this.buildTextToImageWorkflow(input);
 
+    console.log(`[ComfyUI] Submitting workflow with checkpoint: ${this.config.checkpointName}`);
+
     // Queue the prompt
     const queueResponse = await fetch(`${this.baseUrl}/prompt`, {
       method: 'POST',
@@ -67,9 +91,11 @@ export class ComfyUIProvider implements AIProvider<'image'> {
     }
 
     const { prompt_id } = (await queueResponse.json()) as QueueResponse;
+    console.log(`[ComfyUI] Queued prompt: ${prompt_id}`);
 
     // Poll for completion
     const result = await this.waitForCompletion(prompt_id);
+    console.log(`[ComfyUI] Result status: ${result.status}, url: ${result.data?.url || 'none'}`);
 
     if (result.status === 'failed') {
       throw new Error(result.error || 'Image generation failed');
@@ -83,6 +109,7 @@ export class ComfyUIProvider implements AIProvider<'image'> {
       const response = await fetch(`${this.baseUrl}/history/${promptId}`);
 
       if (!response.ok) {
+        console.log(`[ComfyUI] History not ready for ${promptId}`);
         return { status: 'processing' };
       }
 
@@ -90,14 +117,18 @@ export class ComfyUIProvider implements AIProvider<'image'> {
       const promptHistory = history[promptId];
 
       if (!promptHistory) {
+        console.log(`[ComfyUI] No history found for ${promptId}`);
         return { status: 'processing' };
       }
+
+      console.log(`[ComfyUI] Status: ${promptHistory.status.status_str}, completed: ${promptHistory.status.completed}`);
 
       if (!promptHistory.status.completed) {
         return { status: 'processing' };
       }
 
       // Find the output image
+      console.log(`[ComfyUI] Outputs:`, JSON.stringify(promptHistory.outputs, null, 2));
       for (const nodeOutput of Object.values(promptHistory.outputs)) {
         if (nodeOutput.images && nodeOutput.images.length > 0) {
           const image = nodeOutput.images[0];
@@ -147,6 +178,9 @@ export class ComfyUIProvider implements AIProvider<'image'> {
     const width = input.width || 1024;
     const height = input.height || 1024;
     const seed = Math.floor(Math.random() * 1000000000);
+    const { checkpointName, samplerName, scheduler, steps, cfg } = this.config;
+
+    console.log(`[ComfyUI] Building workflow with checkpoint: ${checkpointName}`);
 
     // Basic SDXL workflow
     return {
@@ -154,10 +188,10 @@ export class ComfyUIProvider implements AIProvider<'image'> {
         class_type: 'KSampler',
         inputs: {
           seed,
-          steps: 20,
-          cfg: 7,
-          sampler_name: 'euler',
-          scheduler: 'normal',
+          steps: steps || 20,
+          cfg: cfg || 7,
+          sampler_name: samplerName || 'euler',
+          scheduler: scheduler || 'normal',
           denoise: 1,
           model: ['4', 0],
           positive: ['6', 0],
@@ -168,7 +202,7 @@ export class ComfyUIProvider implements AIProvider<'image'> {
       '4': {
         class_type: 'CheckpointLoaderSimple',
         inputs: {
-          ckpt_name: 'sd_xl_base_1.0.safetensors',
+          ckpt_name: checkpointName,
         },
       },
       '5': {
@@ -218,6 +252,7 @@ export class ComfyUIProvider implements AIProvider<'image'> {
     const width = input.width || 1024;
     const height = input.height || 1024;
     const seed = Math.floor(Math.random() * 1000000000);
+    const { checkpointName, samplerName, scheduler, steps, cfg } = this.config;
 
     return {
       '1': {
@@ -230,10 +265,10 @@ export class ComfyUIProvider implements AIProvider<'image'> {
         class_type: 'KSampler',
         inputs: {
           seed,
-          steps: 20,
-          cfg: 7,
-          sampler_name: 'euler',
-          scheduler: 'normal',
+          steps: steps || 20,
+          cfg: cfg || 7,
+          sampler_name: samplerName || 'euler',
+          scheduler: scheduler || 'normal',
           denoise: 0.75,
           model: ['4', 0],
           positive: ['6', 0],
@@ -244,7 +279,7 @@ export class ComfyUIProvider implements AIProvider<'image'> {
       '4': {
         class_type: 'CheckpointLoaderSimple',
         inputs: {
-          ckpt_name: 'sd_xl_base_1.0.safetensors',
+          ckpt_name: checkpointName,
         },
       },
       '6': {

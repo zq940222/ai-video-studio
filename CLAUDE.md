@@ -36,6 +36,8 @@ pnpm dev          # 启动开发服务器
 pnpm build        # 构建生产版本
 pnpm db:push      # 推送数据库schema到PostgreSQL
 pnpm db:studio    # 打开Drizzle Studio查看数据
+pnpm worker       # 启动任务队列Worker
+pnpm worker:dev   # 开发模式启动Worker（热重载）
 ```
 
 启动前需要配置 `.env.local`（参考 `.env.example`）并运行 `docker-compose up -d` 启动数据库。
@@ -47,6 +49,7 @@ pnpm db:studio    # 打开Drizzle Studio查看数据
 - PostgreSQL + Drizzle ORM
 - NextAuth.js（邮箱密码登录）
 - Zustand 状态管理
+- Redis（任务队列、缓存、限流）
 - MinIO 文件存储
 - FFmpeg 视频合成
 - ComfyUI 图像/视频生成后端（本地部署，节约成本）

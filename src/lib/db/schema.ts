@@ -15,6 +15,7 @@ export const assetTypeEnum = pgEnum('asset_type', ['image', 'video', 'audio', 'm
 export const assetSourceEnum = pgEnum('asset_source', ['generated', 'uploaded']);
 export const taskStatusEnum = pgEnum('task_status', ['pending', 'processing', 'completed', 'failed']);
 export const projectStatusEnum = pgEnum('project_status', ['draft', 'in_progress', 'completed', 'archived']);
+export const authTypeEnum = pgEnum('auth_type', ['api_key', 'oauth']);
 
 // Users table
 export const users = pgTable('users', {
@@ -26,12 +27,20 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-// User API Keys (encrypted)
+// User API Keys (encrypted) - supports both API Key and OAuth
 export const userApiKeys = pgTable('user_api_keys', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   provider: text('provider').notNull(), // 'openai' | 'claude' | 'qwen' | 'kling' | etc.
-  encryptedKey: text('encrypted_key').notNull(),
+  authType: authTypeEnum('auth_type').default('api_key').notNull(), // 'api_key' or 'oauth'
+  encryptedKey: text('encrypted_key'), // For API Key auth (encrypted)
+  // OAuth fields (all encrypted)
+  encryptedAccessToken: text('encrypted_access_token'), // OAuth access token
+  encryptedRefreshToken: text('encrypted_refresh_token'), // OAuth refresh token
+  tokenExpiresAt: timestamp('token_expires_at'), // OAuth token expiration
+  oauthMetadata: jsonb('oauth_metadata'), // Additional OAuth data (user info, scopes, etc.)
+  // Provider-specific config (model selection, etc.)
+  config: jsonb('config'), // { model?: string, ... }
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -51,10 +60,30 @@ export const projects = pgTable('projects', {
 export const scripts = pgTable('scripts', {
   id: uuid('id').primaryKey().defaultRandom(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  title: text('title'), // 剧本标题
+  synopsis: text('synopsis'), // 剧本简介
   content: text('content').notNull(), // Original text/novel content
-  scriptContent: text('script_content'), // AI-converted script
+  scriptContent: text('script_content'), // AI-converted script (legacy, for compatibility)
+  outline: jsonb('outline').$type<Array<{ chapter: number; title: string; summary: string; keyEvents: string[] }>>(), // 故事大纲
+  generationState: jsonb('generation_state').$type<{ phase: string; currentChapter: number; totalChapters: number; scenesGenerated: number }>(), // 生成状态
   version: integer('version').default(1).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Episodes (分集)
+export const episodes = pgTable('episodes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  scriptId: uuid('script_id').references(() => scripts.id, { onDelete: 'set null' }),
+  episodeNumber: integer('episode_number').notNull(), // 集数
+  title: text('title').notNull(), // 分集标题
+  synopsis: text('synopsis'), // 分集简介
+  duration: integer('duration'), // 预计时长（秒）
+  status: projectStatusEnum('status').default('draft').notNull(),
+  metadata: jsonb('metadata'), // 额外数据
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 // Characters
@@ -63,6 +92,7 @@ export const characters = pgTable('characters', {
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   description: text('description'), // AI-generated character description
+  role: text('role'), // 主角/配角/路人
   prompt: text('prompt'), // Prompt for generating character images
   referenceImageUrl: text('reference_image_url'), // User-uploaded reference
   characterSheetUrl: text('character_sheet_url'), // Generated character sheet (3-view)
@@ -72,15 +102,53 @@ export const characters = pgTable('characters', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-// Scenes (storyboard scenes)
+// Locations (场景/地点)
+export const locations = pgTable('locations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(), // 场景名称（如：咖啡厅、办公室）
+  description: text('description'), // 场景描述
+  prompt: text('prompt'), // 用于生成场景图的提示词
+  referenceImageUrl: text('reference_image_url'), // 用户上传的参考图
+  generatedImageUrl: text('generated_image_url'), // AI生成的场景图
+  timeOfDay: text('time_of_day'), // 日/夜/晨/昏
+  mood: text('mood'), // 氛围（温馨、紧张、神秘等）
+  metadata: jsonb('metadata'), // 额外数据
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Props (物品/道具)
+export const props = pgTable('props', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(), // 物品名称
+  description: text('description'), // 物品描述
+  prompt: text('prompt'), // 用于生成物品图的提示词
+  referenceImageUrl: text('reference_image_url'), // 用户上传的参考图
+  generatedImageUrl: text('generated_image_url'), // AI生成的物品图
+  significance: text('significance'), // 剧情重要性/作用
+  metadata: jsonb('metadata'), // 额外数据
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Scenes (storyboard scenes / 分镜)
 export const scenes = pgTable('scenes', {
   id: uuid('id').primaryKey().defaultRandom(),
   scriptId: uuid('script_id').notNull().references(() => scripts.id, { onDelete: 'cascade' }),
+  episodeId: uuid('episode_id').references(() => episodes.id, { onDelete: 'set null' }), // 所属分集
   orderIndex: integer('order_index').notNull(),
+  location: text('location'), // 场景地点名称
+  timeOfDay: text('time_of_day'), // 日/夜/晨/昏
   description: text('description').notNull(), // Scene description
-  dialogue: text('dialogue'), // Character dialogue
+  actions: jsonb('actions').$type<string[]>(), // 动作描述数组
+  dialogues: jsonb('dialogues').$type<Array<{ character: string; line: string; direction?: string }>>(), // 对白
+  cameraHints: jsonb('camera_hints').$type<string[]>(), // 镜头提示
+  sceneProps: jsonb('scene_props').$type<string[]>(), // 场景中的物品
   duration: integer('duration'), // Estimated duration in seconds
   imagePrompt: text('image_prompt'), // AI-generated or user-edited prompt
+  locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }), // 关联场景
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -146,7 +214,10 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     references: [users.id],
   }),
   scripts: many(scripts),
+  episodes: many(episodes),
   characters: many(characters),
+  locations: many(locations),
+  props: many(props),
   assets: many(assets),
   aiTasks: many(aiTasks),
   timelines: many(timelines),
@@ -156,6 +227,19 @@ export const scriptsRelations = relations(scripts, ({ one, many }) => ({
   project: one(projects, {
     fields: [scripts.projectId],
     references: [projects.id],
+  }),
+  episodes: many(episodes),
+  scenes: many(scenes),
+}));
+
+export const episodesRelations = relations(episodes, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [episodes.projectId],
+    references: [projects.id],
+  }),
+  script: one(scripts, {
+    fields: [episodes.scriptId],
+    references: [scripts.id],
   }),
   scenes: many(scenes),
 }));
@@ -168,10 +252,32 @@ export const charactersRelations = relations(characters, ({ one, many }) => ({
   assets: many(assets),
 }));
 
+export const locationsRelations = relations(locations, ({ one }) => ({
+  project: one(projects, {
+    fields: [locations.projectId],
+    references: [projects.id],
+  }),
+}));
+
+export const propsRelations = relations(props, ({ one }) => ({
+  project: one(projects, {
+    fields: [props.projectId],
+    references: [projects.id],
+  }),
+}));
+
 export const scenesRelations = relations(scenes, ({ one, many }) => ({
   script: one(scripts, {
     fields: [scenes.scriptId],
     references: [scripts.id],
+  }),
+  episode: one(episodes, {
+    fields: [scenes.episodeId],
+    references: [episodes.id],
+  }),
+  location: one(locations, {
+    fields: [scenes.locationId],
+    references: [locations.id],
   }),
   assets: many(assets),
 }));
@@ -215,7 +321,10 @@ export type NewUser = typeof users.$inferInsert;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type Script = typeof scripts.$inferSelect;
+export type Episode = typeof episodes.$inferSelect;
 export type Character = typeof characters.$inferSelect;
+export type Location = typeof locations.$inferSelect;
+export type Prop = typeof props.$inferSelect;
 export type Scene = typeof scenes.$inferSelect;
 export type Asset = typeof assets.$inferSelect;
 export type AiTask = typeof aiTasks.$inferSelect;

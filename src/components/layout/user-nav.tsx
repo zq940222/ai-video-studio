@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Settings, LogOut, User } from 'lucide-react';
+import { Settings, LogOut, User, Key } from 'lucide-react';
 
 interface UserNavProps {
   user?: {
@@ -43,14 +43,20 @@ export function UserNav({ user }: UserNavProps) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-slate-700" />
         <DropdownMenuItem asChild className="text-slate-300 focus:bg-slate-700 focus:text-white cursor-pointer">
+          <Link href="/profile">
+            <User className="mr-2 h-4 w-4" />
+            个人中心
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="text-slate-300 focus:bg-slate-700 focus:text-white cursor-pointer">
           <Link href="/settings">
             <Settings className="mr-2 h-4 w-4" />
             设置
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild className="text-slate-300 focus:bg-slate-700 focus:text-white cursor-pointer">
-          <Link href="/settings">
-            <User className="mr-2 h-4 w-4" />
+          <Link href="/settings/api-keys">
+            <Key className="mr-2 h-4 w-4" />
             API 密钥
           </Link>
         </DropdownMenuItem>

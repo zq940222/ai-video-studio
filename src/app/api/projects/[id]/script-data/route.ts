@@ -77,6 +77,13 @@ export async function GET(
       }),
     ]);
 
+    // Debug logging
+    console.log('[script-data] Loaded characters:', projectCharacters.map(c => ({
+      id: c.id,
+      name: c.name,
+      characterSheetUrl: c.characterSheetUrl,
+    })));
+
     return NextResponse.json({
       script,
       characters: projectCharacters,

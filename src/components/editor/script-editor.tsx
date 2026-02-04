@@ -345,6 +345,13 @@ export function ScriptEditor({ projectId, initialScript, onScriptGenerated }: Sc
       }
       const data: DatabaseScriptData = await response.json();
 
+      // Debug: log loaded character data
+      console.log('[ScriptEditor] Loaded characters from API:', data.characters.map(c => ({
+        id: c.id,
+        name: c.name,
+        characterSheetUrl: c.characterSheetUrl,
+      })));
+
       if (data.script) {
         setCurrentScriptId(data.script.id);
         setContent(data.script.content || '');
@@ -392,6 +399,11 @@ export function ScriptEditor({ projectId, initialScript, onScriptGenerated }: Sc
           })),
         };
 
+        console.log('[ScriptEditor] Setting scriptData with characters:', convertedData.characters?.map(c => ({
+          id: c.id,
+          name: c.name,
+          characterSheetUrl: c.characterSheetUrl,
+        })));
         setScriptData(convertedData);
 
         // Set active tab based on available data

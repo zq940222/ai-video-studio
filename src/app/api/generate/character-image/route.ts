@@ -33,19 +33,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Build character sheet prompt - front, side, back views on white background (realistic style)
-    const characterSheetPrompt = `character reference sheet, character turnaround, three views, front view, side view, back view, full body standing pose, pure white background, ${prompt}, same person in all views, consistent appearance, photorealistic, realistic human, real person, high quality, detailed, professional photography lighting`;
+    // Build character portrait prompt - front view full body, photorealistic with detailed face
+    const characterPortraitPrompt = `${prompt}, front view, full body standing pose, looking at camera, studio photography, pure white background, professional lighting, photorealistic, ultra realistic, real person, high quality, 8k uhd, sharp focus, detailed face, detailed eyes, detailed facial features, clear facial expression, detailed skin texture, skin pores, natural skin, natural pose, masterpiece, best quality`;
 
-    const characterSheetNegative = 'low quality, bad anatomy, worst quality, blurry, cropped, partial body, text, watermark, logo, colored background, busy background, different people, inconsistent design, face only, portrait, close up, anime, cartoon, illustration, drawing, painting, cgi, 3d render';
+    const characterPortraitNegative = 'low quality, bad anatomy, worst quality, blurry, cropped, partial body, missing limbs, extra limbs, text, watermark, logo, colored background, busy background, multiple people, anime, cartoon, illustration, drawing, painting, cgi, 3d render, deformed, disfigured, ugly, bad face, blurry face, distorted face, asymmetric eyes, crossed eyes, bad eyes, extra fingers, missing fingers, fused fingers';
 
-    // Build workflow - use 2:1 aspect ratio for character sheet (fits 8G VRAM)
-    // 832x416 is max for wan21 while maintaining 2:1 ratio
+    // Build workflow - use 2:3 aspect ratio for full body portrait (higher res for face detail)
     const workflow = buildImageWorkflow({
-      prompt: characterSheetPrompt,
-      negativePrompt: characterSheetNegative,
-      width: 832,   // Max width for 8G VRAM
-      height: 416,  // 2:1 ratio for multi-view
-      filenamePrefix: 'character_sheet',
+      prompt: characterPortraitPrompt,
+      negativePrompt: characterPortraitNegative,
+      width: 576,   // Slightly higher resolution for better face detail
+      height: 864,  // 2:3 ratio for full body
+      filenamePrefix: 'character',
     });
 
     // Execute workflow
@@ -75,7 +74,7 @@ export async function POST(request: Request) {
         .update(characters)
         .set({
           characterSheetUrl: persistedUrl,
-          prompt: characterSheetPrompt,
+          prompt: characterPortraitPrompt,
           updatedAt: new Date(),
         })
         .where(eq(characters.id, characterId))
@@ -93,7 +92,7 @@ export async function POST(request: Request) {
       type: 'image',
       source: 'generated',
       provider: 'comfyui',
-      prompt: characterSheetPrompt,
+      prompt: characterPortraitPrompt,
       url: persistedUrl,
     }).returning();
     console.log('[Character] Asset saved:', assetResult[0]?.id);

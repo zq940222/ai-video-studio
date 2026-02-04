@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Trash2,
   User,
+  ZoomIn,
 } from 'lucide-react';
 
 interface Character {
@@ -48,7 +49,20 @@ export function CharacterCard({ character, projectId, onUpdate, onDelete }: Char
   const [uploading, setUploading] = useState(false);
   const [characterSheet, setCharacterSheet] = useState(character.characterSheetUrl);
   const [referenceImage, setReferenceImage] = useState(character.referenceImageUrl);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync state when character prop changes (e.g., data loaded from database)
+  useEffect(() => {
+    console.log('[CharacterCard] Syncing from props:', {
+      name: character.name,
+      characterSheetUrl: character.characterSheetUrl,
+      referenceImageUrl: character.referenceImageUrl,
+    });
+    setCharacterSheet(character.characterSheetUrl);
+    setReferenceImage(character.referenceImageUrl);
+    setPrompt(character.prompt || '');
+  }, [character.characterSheetUrl, character.referenceImageUrl, character.prompt, character.name]);
 
   // Generate default prompt from character description
   const generateDefaultPrompt = () => {
@@ -251,13 +265,13 @@ export function CharacterCard({ character, projectId, onUpdate, onDelete }: Char
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Character Image Display */}
+        {/* Character Image Display - Side by Side */}
         <div className="grid grid-cols-2 gap-4">
           {/* Reference Image */}
           <div className="space-y-2">
             <Label className="text-slate-300 text-sm">参考图</Label>
             <div
-              className="aspect-square rounded-lg border-2 border-dashed border-slate-700 flex items-center justify-center bg-slate-800/50 cursor-pointer hover:border-slate-600 transition-colors overflow-hidden"
+              className="aspect-[2/3] rounded-lg border-2 border-dashed border-slate-700 flex items-center justify-center bg-slate-800/50 cursor-pointer hover:border-slate-600 transition-colors overflow-hidden"
               onClick={() => fileInputRef.current?.click()}
             >
               {uploading ? (
@@ -271,7 +285,7 @@ export function CharacterCard({ character, projectId, onUpdate, onDelete }: Char
               ) : (
                 <div className="text-center p-4">
                   <Upload className="h-8 w-8 mx-auto text-slate-500 mb-2" />
-                  <p className="text-xs text-slate-500">点击上传参考图</p>
+                  <p className="text-xs text-slate-500">点击上传</p>
                 </div>
               )}
             </div>
@@ -287,22 +301,34 @@ export function CharacterCard({ character, projectId, onUpdate, onDelete }: Char
           {/* Generated Image */}
           <div className="space-y-2">
             <Label className="text-slate-300 text-sm">角色图</Label>
-            <div className="aspect-square rounded-lg border border-slate-700 flex items-center justify-center bg-slate-800/50 overflow-hidden">
+            <div className="aspect-[2/3] rounded-lg border border-slate-700 flex items-center justify-center bg-slate-800/50 overflow-hidden relative group">
               {generating ? (
                 <div className="text-center">
                   <Loader2 className="h-8 w-8 animate-spin text-blue-400 mx-auto mb-2" />
                   <p className="text-xs text-slate-400">生成中...</p>
                 </div>
               ) : characterSheet ? (
-                <img
-                  src={characterSheet}
-                  alt="角色图"
-                  className="w-full h-full object-cover"
-                />
+                <>
+                  <img
+                    src={characterSheet}
+                    alt="角色图"
+                    className="w-full h-full object-cover cursor-pointer"
+                    onClick={() => setPreviewImage(characterSheet)}
+                    onError={(e) => {
+                      console.error('Image load error:', characterSheet);
+                    }}
+                  />
+                  <div
+                    className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                    onClick={() => setPreviewImage(characterSheet)}
+                  >
+                    <ZoomIn className="h-8 w-8 text-white" />
+                  </div>
+                </>
               ) : (
                 <div className="text-center p-4">
                   <ImageIcon className="h-8 w-8 mx-auto text-slate-500 mb-2" />
-                  <p className="text-xs text-slate-500">点击下方按钮生成</p>
+                  <p className="text-xs text-slate-500">点击下方生成</p>
                 </div>
               )}
             </div>
@@ -392,6 +418,29 @@ export function CharacterCard({ character, projectId, onUpdate, onDelete }: Char
           )}
         </Button>
       </CardContent>
+
+      {/* Image Preview Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] w-full h-full flex items-center justify-center">
+            <img
+              src={previewImage}
+              alt="预览"
+              className="max-w-full max-h-full object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              className="absolute top-4 right-4 text-white hover:text-gray-300 bg-black/50 rounded-full p-2"
+              onClick={() => setPreviewImage(null)}
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

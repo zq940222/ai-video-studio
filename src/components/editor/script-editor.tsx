@@ -39,6 +39,8 @@ interface ScriptData {
     name: string;
     description: string;
     role?: string;
+    gender?: string;
+    ageGroup?: string;
     prompt?: string;
     referenceImageUrl?: string;
     characterSheetUrl?: string;
@@ -116,6 +118,8 @@ interface DatabaseScriptData {
     name: string;
     description: string | null;
     role: string | null;
+    gender: string | null;
+    ageGroup: string | null;
     prompt: string | null;
     referenceImageUrl: string | null;
     characterSheetUrl: string | null;
@@ -367,6 +371,8 @@ export function ScriptEditor({ projectId, initialScript, onScriptGenerated }: Sc
             name: c.name,
             description: c.description || '',
             role: c.role || undefined,
+            gender: c.gender || undefined,
+            ageGroup: c.ageGroup || undefined,
             prompt: c.prompt || undefined,
             referenceImageUrl: c.referenceImageUrl || undefined,
             characterSheetUrl: c.characterSheetUrl || undefined,
@@ -1062,17 +1068,47 @@ export function ScriptEditor({ projectId, initialScript, onScriptGenerated }: Sc
               <div className="grid gap-4 md:grid-cols-2">
                 {scriptData.characters.map((character, index) => (
                   <CharacterCard
-                    key={index}
+                    key={character.id || `temp-${index}`}
                     character={character}
                     projectId={projectId}
-                    onUpdate={(updated) => {
-                      const newCharacters = [...(scriptData.characters || [])];
-                      newCharacters[index] = { ...newCharacters[index], ...updated };
-                      setScriptData({ ...scriptData, characters: newCharacters });
+                    onUpdate={async (updated) => {
+                      // Use functional update to get latest state (avoids stale closure)
+                      setScriptData(prev => {
+                        const newCharacters = [...(prev.characters || [])];
+                        newCharacters[index] = { ...newCharacters[index], ...updated };
+                        return { ...prev, characters: newCharacters };
+                      });
+
+                      // Persist to database if character has an ID
+                      if (character.id) {
+                        try {
+                          await fetch(`/api/projects/${projectId}/characters/${character.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(updated),
+                          });
+                        } catch (error) {
+                          console.error('[ScriptEditor] Failed to persist character update:', error);
+                        }
+                      }
                     }}
-                    onDelete={() => {
-                      const newCharacters = scriptData.characters?.filter((_, i) => i !== index) || [];
-                      setScriptData({ ...scriptData, characters: newCharacters });
+                    onDelete={async () => {
+                      // Use functional update to get latest state
+                      setScriptData(prev => ({
+                        ...prev,
+                        characters: prev.characters?.filter((_, i) => i !== index) || []
+                      }));
+
+                      // Delete from database if character has an ID
+                      if (character.id) {
+                        try {
+                          await fetch(`/api/projects/${projectId}/characters/${character.id}`, {
+                            method: 'DELETE',
+                          });
+                        } catch (error) {
+                          console.error('[ScriptEditor] Failed to delete character:', error);
+                        }
+                      }
                     }}
                   />
                 ))}

@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
+import { uploadBuffer, generateObjectName } from '@/lib/storage';
 
-// POST - Upload character reference image
+// POST - Upload character reference image to MinIO
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -36,25 +34,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '文件大小不能超过 10MB' }, { status: 400 });
     }
 
-    // Create upload directory
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'characters', projectId);
-    await mkdir(uploadDir, { recursive: true });
-
-    // Generate unique filename
+    // Get file extension
     const ext = file.name.split('.').pop() || 'png';
-    const filename = `${randomUUID()}.${ext}`;
-    const filepath = join(uploadDir, filename);
 
-    // Write file
+    // Upload to MinIO
     const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(filepath, buffer);
+    const objectName = generateObjectName(`references/${projectId}`, ext);
+    const url = await uploadBuffer(buffer, objectName, file.type);
 
-    // Return public URL
-    const url = `/uploads/characters/${projectId}/${filename}`;
+    console.log('[Upload] Reference image saved to MinIO:', url);
 
     return NextResponse.json({
       url,
-      filename,
+      filename: objectName,
       characterName,
     });
   } catch (error) {

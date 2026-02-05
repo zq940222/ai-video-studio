@@ -75,12 +75,15 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { name, description, prompt, referenceImageUrl, characterSheetUrl, voiceId } = body;
+    const { name, description, role, gender, ageGroup, prompt, referenceImageUrl, characterSheetUrl, voiceId } = body;
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
 
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
+    if (role !== undefined) updateData.role = role;
+    if (gender !== undefined) updateData.gender = gender;
+    if (ageGroup !== undefined) updateData.ageGroup = ageGroup;
     if (prompt !== undefined) updateData.prompt = prompt;
     if (referenceImageUrl !== undefined) updateData.referenceImageUrl = referenceImageUrl;
     if (characterSheetUrl !== undefined) updateData.characterSheetUrl = characterSheetUrl;

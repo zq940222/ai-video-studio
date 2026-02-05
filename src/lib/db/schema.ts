@@ -93,6 +93,8 @@ export const characters = pgTable('characters', {
   name: text('name').notNull(),
   description: text('description'), // AI-generated character description
   role: text('role'), // 主角/配角/路人
+  gender: text('gender'), // male/female
+  ageGroup: text('age_group'), // child/teenager/young_adult/middle_aged/elderly
   prompt: text('prompt'), // Prompt for generating character images
   referenceImageUrl: text('reference_image_url'), // User-uploaded reference
   characterSheetUrl: text('character_sheet_url'), // Generated character sheet (3-view)

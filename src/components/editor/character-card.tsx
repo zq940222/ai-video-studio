@@ -20,12 +20,39 @@ import {
   User,
   ZoomIn,
 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+// Gender options
+const GENDER_OPTIONS = [
+  { value: 'male', label: '男性' },
+  { value: 'female', label: '女性' },
+] as const;
+
+// Age group options
+const AGE_GROUP_OPTIONS = [
+  { value: 'child', label: '儿童 (5-12岁)' },
+  { value: 'teenager', label: '青少年 (13-19岁)' },
+  { value: 'young_adult', label: '青年 (20-35岁)' },
+  { value: 'middle_aged', label: '中年 (36-55岁)' },
+  { value: 'elderly', label: '老年 (55岁以上)' },
+] as const;
+
+type Gender = typeof GENDER_OPTIONS[number]['value'];
+type AgeGroup = typeof AGE_GROUP_OPTIONS[number]['value'];
 
 interface Character {
   id?: string;
   name: string;
   description: string;
   role?: string;
+  gender?: Gender;
+  ageGroup?: AgeGroup;
   prompt?: string;
   referenceImageUrl?: string;
   characterSheetUrl?: string;
@@ -44,6 +71,8 @@ export function CharacterCard({ character, projectId, onUpdate, onDelete }: Char
   const [editName, setEditName] = useState(character.name);
   const [editDescription, setEditDescription] = useState(character.description);
   const [editRole, setEditRole] = useState(character.role || '');
+  const [gender, setGender] = useState<Gender | undefined>(character.gender);
+  const [ageGroup, setAgeGroup] = useState<AgeGroup | undefined>(character.ageGroup);
   const [prompt, setPrompt] = useState(character.prompt || '');
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -54,15 +83,12 @@ export function CharacterCard({ character, projectId, onUpdate, onDelete }: Char
 
   // Sync state when character prop changes (e.g., data loaded from database)
   useEffect(() => {
-    console.log('[CharacterCard] Syncing from props:', {
-      name: character.name,
-      characterSheetUrl: character.characterSheetUrl,
-      referenceImageUrl: character.referenceImageUrl,
-    });
     setCharacterSheet(character.characterSheetUrl);
     setReferenceImage(character.referenceImageUrl);
     setPrompt(character.prompt || '');
-  }, [character.characterSheetUrl, character.referenceImageUrl, character.prompt, character.name]);
+    setGender(character.gender);
+    setAgeGroup(character.ageGroup);
+  }, [character.characterSheetUrl, character.referenceImageUrl, character.prompt, character.name, character.gender, character.ageGroup]);
 
   // Generate default prompt from character description
   const generateDefaultPrompt = () => {
@@ -150,6 +176,8 @@ export function CharacterCard({ character, projectId, onUpdate, onDelete }: Char
           characterId: character.id,
           characterName: character.name,
           prompt,
+          gender,
+          ageGroup,
           referenceImageUrl: referenceImage,
         }),
       });
@@ -332,6 +360,46 @@ export function CharacterCard({ character, projectId, onUpdate, onDelete }: Char
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Gender and Age Selectors */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label className="text-slate-300 text-sm">性别</Label>
+            <Select value={gender} onValueChange={(v) => {
+              setGender(v as Gender);
+              onUpdate?.({ ...character, gender: v as Gender });
+            }}>
+              <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
+                <SelectValue placeholder="选择性别" />
+              </SelectTrigger>
+              <SelectContent>
+                {GENDER_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-slate-300 text-sm">年龄段</Label>
+            <Select value={ageGroup} onValueChange={(v) => {
+              setAgeGroup(v as AgeGroup);
+              onUpdate?.({ ...character, ageGroup: v as AgeGroup });
+            }}>
+              <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
+                <SelectValue placeholder="选择年龄段" />
+              </SelectTrigger>
+              <SelectContent>
+                {AGE_GROUP_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

@@ -51,6 +51,8 @@ export async function GET(
         name: characters.name,
         description: characters.description,
         role: characters.role,
+        gender: characters.gender,
+        ageGroup: characters.ageGroup,
         prompt: characters.prompt,
         referenceImageUrl: characters.referenceImageUrl,
         characterSheetUrl: characters.characterSheetUrl,
